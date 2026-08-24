@@ -1,0 +1,813 @@
+{
+  "name": "Customer ID CSV Lookup",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Customer Lookup",
+        "formDescription": "Enter a Customer ID to extract that customer’s details.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Customer ID",
+              "fieldName": "customer_id",
+              "requiredField": true
+            }
+          ]
+        },
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "0bc80d0f-817a-4d87-a23b-6f0f0626b682",
+      "name": "Enter Customer ID",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        304
+      ],
+      "webhookId": "33ff85e1-4967-4090-b78e-216b150f1870"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "pfQuBu2V50tY4Gvd",
+          "cachedResultName": "Customers"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "customer_id",
+              "keyValue": "={{ $json.customer_id }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "e3b9a839-7f24-4017-b1b6-8cd7f56fc29d",
+      "name": "Look Up Customer",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": []
+        },
+        "includeOtherFields": true,
+        "include": "selected",
+        "includeFields": "gender, senior_citizen, partner, dependents, tenure_months, phone_service, multiple_lines, internet_service, online_security, online_backup, device_protection, tech_support, streaming_tv, streaming_movies, contract, paperless_billing, payment_method, monthly_charges, total_charges, churn_score, cltv",
+        "options": {}
+      },
+      "id": "d4b8ed3c-36d7-47b1-96f2-18e85acdda45",
+      "name": "Select Columns",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        672,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get CLTV from Customer Lookup\nconst cltv = Number($json.cltv);\n\n// Validate input\nif (isNaN(cltv)) {\n  throw new Error(\"Invalid or missing CLTV\");\n}\n\n// Dataset-derived thresholds\nconst LOW_THRESHOLD = 3964;\nconst HIGH_THRESHOLD = 5085;\n\nlet valueBand;\n\nif (cltv < LOW_THRESHOLD) {\n  valueBand = \"LOW\";\n} else if (cltv <= HIGH_THRESHOLD) {\n  valueBand = \"MEDIUM\";\n} else {\n  valueBand = \"HIGH\";\n}\n\n// Destructure to separate specific fields from the rest of the customer data\nconst { churn_score, riskBand, cltv: cltvVal, value_band, ...restOfData } = $json;\n\nreturn {\n  json: {\n    customer_data: restOfData,\n    risk_information: {\n      churn_score: churn_score,\n      riskBand: riskBand\n    },\n    value_information: {\n      cltv: cltv,\n      value_band: valueBand\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        304
+      ],
+      "id": "e726355d-bec6-4570-8d5f-eaff951871ea",
+      "name": "ValueBand"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get churn score from the Customer Lookup node\nconst churnScore = Number($input.first().json.churn_score);\n\n// Validate input\nif (isNaN(churnScore)) {\n  throw new Error(\"Invalid or missing churn_score\");\n}\n\n// Classify risk\nlet riskBand;\n\nif (churnScore < 40) {\n  riskBand = \"LOW\";\n} else if (churnScore <= 70) {\n  riskBand = \"MEDIUM\";\n} else {\n  riskBand = \"HIGH\";\n}\n\n// Return original customer data + risk information\nreturn {\n  json: {\n    ...$json,\n    riskBand: riskBand\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        304
+      ],
+      "id": "37963726-692e-4dad-b1a4-be7b8f46d659",
+      "name": "RiskBand"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        1648,
+        544
+      ],
+      "id": "5fffd885-e21f-417a-9741-c81a17e8d861",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "GIBOHq0g2hKCmvAW",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const customer = $json;\n\nreturn {\n  json: {\n    ...customer,\n\n    customer_context: JSON.stringify(customer, null, 2)\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        304
+      ],
+      "id": "6b079da8-34af-4f56-a87c-fa162387b76c",
+      "name": "Preparing AI input"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the following customer.\n\ninput: {{ $json.customer_context }}\n\nCreate the customer profile according to your instructions.\n\nreturn valid json only",
+        "options": {
+          "systemMessage": "You are the Customer Profiler Agent in an AI-powered customer retention decision system.\n\nYour job is to analyze the provided customer data and create a concise, evidence-based profile of the customer.\n\nYou must NOT:\n- Predict whether the customer will churn.\n- Recommend a retention action.\n- Invent information that is not present in the data.\n- Treat correlations or patterns as proven causal relationships.\n\nYou should identify:\n1. Customer lifecycle stage based on tenure.\n2. Contract and service characteristics.\n3. Payment and billing characteristics.\n4. Product/service usage characteristics.\n5. Important combinations of attributes.\n6. Commercial context based on monthly charges and CLTV.\n7. Notable characteristics that may be relevant to later risk or retention analysis.\n\nDistinguish clearly between:\n- FACT: directly present in the data.\n- INFERENCE: a reasonable interpretation of the data.\n\nDo not make unsupported assumptions about customer satisfaction, income, preferences, personality, or reasons for churn.\n\nReturn ONLY valid JSON in the following structure:\n\n{\n  \"customer_stage\": \"\",\n  \"relationship_profile\": \"\",\n  \"key_characteristics\": [\n    {\n      \"attribute\": \"\",\n      \"value\": \"\",\n      \"relevance\": \"\"\n    }\n  ],\n  \"commercial_context\": {\n    \"monthly_charges\": 0,\n    \"cltv\": 0,\n    \"value_band\": \"\"\n  },\n  \"notable_patterns\": [\n    {\n      \"pattern\": \"\",\n      \"evidence\": \"\",\n      \"type\": \"FACT or INFERENCE\"\n    }\n  ],\n  \"data_limitations\": []\n}\n\nDo not make business recommendations.\n\nDo not infer causal relationships.\n\nDo not classify attributes as \"higher cost\",\n\"better\", \"worse\", or \"higher risk\" unless that\nclassification is explicitly provided in the input.\n\nFocus on describing the customer and identifying\nobservable patterns that later agents can investigate."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1568,
+        304
+      ],
+      "id": "9a5aade0-b60c-4971-b5fa-847fe930daa9",
+      "name": "Customer Profiler"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the customer's churn risk using BOTH the original customer data and the Customer Profiler analysis provided below.\n\nIMPORTANT:\nThe churn score and risk band have already been calculated by the deterministic preprocessing system.\n\nYou MUST treat:\n- churn_score as the official churn score\n- riskBand as the official risk classification\n\nDo NOT recalculate, modify, or override these values.\n\n========================\nORIGINAL CUSTOMER DATA\n========================\n\n{{ JSON.stringify($('ValueBand').first().json, null, 2) }}\n\n========================\nCUSTOMER PROFILER OUTPUT\n========================\n\n{{ JSON.stringify($json, null, 2) }}\n\n========================\nYOUR TASK\n========================\n\nAnalyze:\n\n1. The customer's current churn risk classification.\n2. The strongest observable risk signals.\n3. Protective characteristics that may offset risk.\n4. Important combinations of customer attributes.\n5. Any contradictions or uncertainties.\n6. The limitations of the available data.\n\nFocus on explaining the EXISTING churn classification.\n\nDo NOT attempt to predict a new churn score.\n\nDo NOT recommend a retention strategy.\n\nDistinguish clearly between:\n- FACT = directly observable in the data\n- INFERENCE = reasonable interpretation of the data\n\nDo not invent:\n- customer dissatisfaction\n- customer complaints\n- customer motivations\n- customer preferences\n- reasons for churn\n\nUse cautious language for inferences.\n\nReturn only the JSON structure specified in the system instructions.",
+        "options": {
+          "systemMessage": "You are the Churn Risk Analysis Agent in a multi-agent customer retention decision system.\n\nYour responsibility is to investigate and interpret the customer's existing churn-risk classification using the available customer data and the Customer Profiler's analysis.\n\nThe deterministic data-processing layer has already calculated the customer's churn_score and risk_band. Treat these values as authoritative. DO NOT recalculate, modify, or override the churn score or risk band.\n\nYour objective is to identify the observable customer characteristics that may be relevant to the customer's current level of churn risk.\n\nYou should analyze:\n\n1. Customer tenure and lifecycle stage.\n2. Contract type and level of contractual commitment.\n3. Monthly and total charges.\n4. Payment method and billing characteristics.\n5. Internet and phone service configuration.\n6. Presence or absence of optional services.\n7. Customer support and security services.\n8. Relevant combinations of attributes.\n9. Protective characteristics that may reduce or offset churn risk.\n10. Any contradictions or uncertainty in the available evidence.\n\nFor each risk signal, explain:\n- What the signal is.\n- What customer data supports it.\n- Why it may be relevant.\n- How important it appears to be.\n\nIMPORTANT REASONING RULES:\n\n- Do not claim that an attribute causes churn.\n- Do not invent customer dissatisfaction, complaints, intentions, preferences, or motivations.\n- Do not assume that a customer wants a particular product or offer.\n- Do not use external statistics unless they are explicitly provided as input.\n- Do not state that an attribute is \"known to cause churn\" based only on general knowledge.\n- Use cautious language such as \"may indicate\", \"could suggest\", \"is consistent with\", or \"may warrant investigation\".\n- Distinguish observed facts from interpretations.\n- Do not recommend a retention strategy. That is the responsibility of the Retention Strategy Agent.\n- Do not recommend discounts, upgrades, offers, or service changes.\n- Do not change the customer's risk classification.\n\nYou must explicitly distinguish between:\nFACT:\nA value directly present in the customer's data.\n\nINFERENCE:\nA reasonable interpretation of one or more observed facts.\n\nDo not manufacture evidence to make the risk explanation stronger.\n\nThe analysis should prioritize the strongest and most actionable signals rather than listing every customer attribute.\n\nIf evidence is insufficient to explain a risk signal, explicitly state the limitation.\n\nReturn ONLY valid JSON. Do not include Markdown, explanations outside the JSON, or code fences.\n\nUse exactly this structure:\n\n{\n  \"risk_assessment\": {\n    \"churn_score\": 0,\n    \"risk_band\": \"\",\n    \"overall_interpretation\": \"\"\n  },\n  \"risk_signals\": [\n    {\n      \"signal\": \"\",\n      \"evidence\": [],\n      \"type\": \"FACT or INFERENCE\",\n      \"importance\": \"HIGH/MEDIUM/LOW\",\n      \"interpretation\": \"\"\n    }\n  ],\n  \"protective_signals\": [\n    {\n      \"signal\": \"\",\n      \"evidence\": [],\n      \"type\": \"FACT or INFERENCE\",\n      \"interpretation\": \"\"\n    }\n  ],\n  \"risk_interactions\": [\n    {\n      \"attributes\": [],\n      \"observation\": \"\",\n      \"interpretation\": \"\"\n    }\n  ],\n  \"uncertainties\": [],\n  \"data_limitations\": [],\n  \"confidence\": \"HIGH/MEDIUM/LOW\"\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2368,
+        0
+      ],
+      "id": "90ae1bbb-659a-415a-b29e-bf8929245104",
+      "name": "Churn Risk Agent"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        2448,
+        240
+      ],
+      "id": "79d617f2-e640-4063-8e2b-d1daccbea59c",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "id": "GIBOHq0g2hKCmvAW",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the customer's potential pain points and unmet needs using ONLY the original customer data and the Customer Profiler analysis provided below.\n\n========================\nORIGINAL CUSTOMER DATA\n========================\n\n{{ JSON.stringify($('ValueBand').first().json, null, 2) }}\n\n========================\nCUSTOMER PROFILER OUTPUT\n========================\n\n{{ JSON.stringify($json, null, 2) }}\n\n========================\nTASK\n========================\n\nIdentify the most plausible customer pain points, friction areas, unmet needs, or potential value gaps.\n\nFocus on translating observable customer characteristics into potential customer problems.\n\nDo NOT perform churn-risk analysis.\n\nDo NOT use information from the Churn Risk Agent.\n\nDo NOT recommend a retention strategy.\n\nDo NOT invent customer dissatisfaction, complaints, emotions, motivations, preferences, or intentions.\n\nClearly distinguish FACTS from INFERENCES.\n\nRemember:\n\nA customer's attribute is not automatically a pain point.\n\nThe absence of a service is not automatically an unmet need.\n\nFor important inferred pain points, consider alternative explanations.\n\nPrioritize the strongest and most actionable potential pain points rather than listing every possible issue.\n\nReturn only the JSON structure specified in the system instructions.",
+        "options": {
+          "systemMessage": "You are the Customer Pain-Point Analysis Agent in a multi-agent customer retention decision system.\n\nYour responsibility is to identify plausible customer pain points, friction areas, unmet needs, or potential sources of dissatisfaction from the customer's observable data.\n\nYou work INDEPENDENTLY and IN PARALLEL with the Churn Risk Agent.\n\nYou DO NOT receive or use the Churn Risk Agent's analysis.\n\nYour analysis must be based only on:\n1. The original customer data.\n2. The Customer Profiler's analysis.\n\nThe purpose of your analysis is to answer:\n\n\"What potential customer problems, friction points, unmet needs, or value gaps can reasonably be inferred from the customer's current relationship and service configuration?\"\n\nYou are NOT a churn prediction agent.\n\nYou are NOT a retention strategy agent.\n\nYou are NOT a customer feedback agent.\n\nYou must not recommend a retention action. The Retention Strategy Agent will use your output later.\n\n--------------------------------------------------\nCORE ANALYSIS\n--------------------------------------------------\n\nAnalyze the customer across the following dimensions where relevant:\n\n1. PRICE / VALUE\n   - Monthly charges\n   - Total charges\n   - Service bundle\n   - Potential mismatch between price and services received\n   - Potential value-perception concerns\n\n2. CONTRACT / COMMITMENT\n   - Contract type\n   - Level of contractual commitment\n   - Potential switching friction or lack thereof\n\n3. BILLING / PAYMENT\n   - Payment method\n   - Paperless billing\n   - Potential billing or payment friction\n\n4. SERVICE CONFIGURATION\n   - Internet service\n   - Phone service\n   - Multiple lines\n   - Add-on services\n   - Security, backup, device protection and support\n\n5. SERVICE ADOPTION / ENGAGEMENT\n   - Services currently used or subscribed to\n   - Services not currently subscribed to\n   - Potential gaps between the customer's configuration and possible needs\n\n6. CUSTOMER LIFECYCLE\n   - Tenure\n   - Customer stage\n   - Potential onboarding, maturity, or relationship-stage issues\n\n7. HOUSEHOLD / ACCOUNT CONTEXT\n   - Partner\n   - Dependents\n   - Number of lines\n   - Other observable characteristics that may affect the account configuration\n\nOnly analyze a dimension when the available data provides meaningful evidence.\n\n--------------------------------------------------\nFACT VS INFERENCE\n--------------------------------------------------\n\nThis distinction is CRITICAL.\n\nA FACT is directly observable in the customer data.\n\nExample:\n\nFACT:\n\"monthly_charges = 104.8\"\n\nAn INFERENCE is a reasonable interpretation of one or more facts.\n\nExample:\n\nINFERENCE:\n\"The relatively high recurring charge may create a potential price-value concern.\"\n\nDo NOT convert an inference into a fact.\n\nFor example:\n\nINCORRECT:\n\"The customer is unhappy with the price.\"\n\nCORRECT:\n\"The customer's relatively high recurring charge may represent a potential price-value friction point, although dissatisfaction is not directly observed.\"\n\n--------------------------------------------------\nDO NOT INVENT CUSTOMER SENTIMENT\n--------------------------------------------------\n\nYou do NOT have access to:\n\n- Customer complaints\n- Customer reviews\n- Customer satisfaction\n- NPS\n- Customer emotions\n- Customer intentions\n- Customer preferences\n- Customer expectations\n- Customer reasons for churn\n- Customer interactions\n- Support tickets\n\nUnless such information is explicitly provided in the input, you must treat it as UNKNOWN.\n\nNever state:\n\n\"The customer is frustrated.\"\n\n\"The customer wants a cheaper plan.\"\n\n\"The customer is dissatisfied.\"\n\n\"The customer intends to switch.\"\n\nInstead state:\n\n\"This may represent a potential friction point.\"\n\n\"This could indicate a possible unmet need.\"\n\n\"This is consistent with a potential value concern.\"\n\n\"Customer sentiment cannot be confirmed from the available data.\"\n\n--------------------------------------------------\nDO NOT ASSUME ABSENCE = NEED\n--------------------------------------------------\n\nThe absence of a service is NOT automatically a pain point.\n\nFor example:\n\nonline_security = \"No\"\n\ndoes NOT mean:\n\n\"The customer needs online security.\"\n\nInstead:\n\n\"The customer does not currently subscribe to online security. Whether this represents an unmet need cannot be determined from the available data.\"\n\nOnly identify it as a potential pain point if there is additional evidence supporting that interpretation.\n\n--------------------------------------------------\nAVOID DUPLICATING THE PROFILER\n--------------------------------------------------\n\nThe Customer Profiler already describes who the customer is.\n\nDo not simply repeat the customer's attributes.\n\nTranslate relevant attributes into potential customer problems or friction points.\n\nFor example:\n\nWEAK:\n\"Customer has a month-to-month contract.\"\n\nBETTER:\n\"The absence of long-term contractual commitment may represent a potential retention vulnerability if the customer experiences dissatisfaction.\"\n\n--------------------------------------------------\nPRIORITIZATION\n--------------------------------------------------\n\nDo not generate a long list of weak possibilities.\n\nIdentify only the most meaningful potential pain points supported by the available evidence.\n\nFor each potential pain point, evaluate:\n\n1. Evidence strength.\n2. Business relevance.\n3. Customer relevance.\n4. Whether the issue is directly observable or inferred.\n5. Confidence.\n\nRank potential pain points as:\n\nHIGH:\nStrong evidence and potentially meaningful customer/business impact.\n\nMEDIUM:\nReasonable evidence but meaningful uncertainty remains.\n\nLOW:\nWeak or speculative possibility.\n\nIf no meaningful pain point can be established, explicitly say so.\n\n--------------------------------------------------\nALTERNATIVE EXPLANATIONS\n--------------------------------------------------\n\nFor every important inferred pain point, consider whether another explanation is possible.\n\nExample:\n\nObservation:\nHigh monthly charges.\n\nPossible interpretation:\nPotential price-value friction.\n\nAlternative explanation:\nThe customer may consider the extensive service bundle valuable enough to justify the charge.\n\nDo not force a negative interpretation when the data supports multiple explanations.\n\n--------------------------------------------------\nNO RETENTION STRATEGY\n--------------------------------------------------\n\nDo NOT recommend:\n\n- Discounts\n- Offers\n- Upgrades\n- Downgrades\n- Contract changes\n- Service changes\n- Support outreach\n- Loyalty programs\n- Promotions\n\nYour responsibility ends at identifying and prioritizing potential customer pain points.\n\nThe Retention Strategy Agent will determine what action, if any, should be taken.\n\n--------------------------------------------------\nOUTPUT REQUIREMENTS\n--------------------------------------------------\n\nReturn ONLY valid JSON.\n\nDo not use Markdown.\n\nDo not include explanations outside the JSON.\n\nUse exactly this structure:\n\n{\n  \"potential_pain_points\": [\n    {\n      \"pain_point\": \"\",\n      \"evidence\": [],\n      \"reasoning\": \"\",\n      \"type\": \"FACT or INFERENCE\",\n      \"priority\": \"HIGH/MEDIUM/LOW\",\n      \"confidence\": \"HIGH/MEDIUM/LOW\"\n    }\n  ],\n  \"primary_potential_need\": \"\",\n  \"secondary_potential_needs\": [],\n  \"supporting_observations\": [],\n  \"alternative_explanations\": [],\n  \"unknowns\": [],\n  \"data_limitations\": [],\n  \"overall_confidence\": \"HIGH/MEDIUM/LOW\"\n}\n\nThe \"primary_potential_need\" must describe a potential customer need or friction area, NOT a recommended solution.\n\nFor example:\n\nGOOD:\n\"Potential need for stronger price-value alignment.\"\n\nBAD:\n\"Offer the customer a discount.\"\n\nIf the evidence is insufficient to identify a primary need, return:\n\n\"primary_potential_need\": \"Insufficient evidence to identify a specific customer need.\"\n\nMaintain analytical neutrality and avoid overstating conclusions."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2368,
+        512
+      ],
+      "id": "6d901caa-2d23-4e1d-b742-3e008fda9eae",
+      "name": "Pain-Point Agent"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        2448,
+        736
+      ],
+      "id": "8de05364-c8cc-4d91-9de5-363b5d14a9fb",
+      "name": "Groq Chat Model2",
+      "credentials": {
+        "groqApi": {
+          "id": "GIBOHq0g2hKCmvAW",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the following customer risk and pain-point assessment and generate a retention strategy.\n\nCUSTOMER RISK AND PAIN-POINT ASSESSMENT:\n\n{{ JSON.stringify($('Code in JavaScript').item.json) }}\n\nThe input contains two main sections:\n\n- \"risk\": customer churn risk assessment, including churn score, risk band, risk signals, protective signals, risk interactions, and confidence.\n- \"pain_points\": identified potential customer needs and pain points, including priority, confidence, evidence, alternative explanations, and unknowns.\n\nTASK:\n\n1. Identify the single most important retention problem using the strongest combination of pain-point priority, pain-point confidence, and relevant risk signals.\n2. Assign the most appropriate issue category.\n3. Generate exactly 3 distinct and actionable retention strategies.\n4. Rank them as Priority 1, Priority 2, and Priority 3.\n5. Ensure each strategy directly addresses the identified retention problem.\n6. Balance customer value and business value.\n7. Do not invent customer facts, preferences, usage behavior, or business capabilities that are not supported by the input.\n8. Avoid generic recommendations unless they are clearly supported by the customer's evidence.\n9. Return ONLY the JSON object specified in the system prompt.\n10. Keep the response concise to prevent output truncation.\n\nIMPORTANT:\nThe customer analysis may contain uncertain or hypothetical pain points. Do not treat a \"Potential\" pain point as a confirmed customer complaint. Use the confidence level and evidence provided when deciding how strongly to act on it.\n\nReturn only complete, valid JSON.",
+        "options": {
+          "systemMessage": "You are a Retention Strategy Agent in a customer churn prediction and retention workflow.\n\nYour role is to convert customer risk and pain-point analysis into practical, targeted retention strategies.\n\nCORE RESPONSIBILITIES:\n1. Identify the single most important retention problem.\n2. Determine the most appropriate issue category.\n3. Generate exactly 3 candidate retention strategies.\n4. Rank the strategies from Priority 1 to Priority 3.\n5. Ensure every strategy directly addresses the identified retention problem.\n6. Prefer targeted interventions over generic discounts.\n7. Base recommendations primarily on the evidence provided in the input.\n8. Do not invent customer facts, preferences, usage behavior, or business capabilities that are not supported by the input.\n9. When a recommendation requires an assumption, keep it reasonable and avoid presenting the assumption as a known fact.\n\nSTRATEGY PRINCIPLES:\n- Prioritize the highest-priority and highest-confidence pain point.\n- Consider the customer's risk signals, protective signals, and risk interactions.\n- Balance customer value with business value.\n- Prefer retention actions that improve perceived value, reduce friction, or increase engagement.\n- Do not automatically recommend discounts unless the evidence strongly supports a price-related intervention.\n- Strategies must be realistic and actionable for a telecom/service business.\n- Avoid repeating essentially the same strategy using different wording.\n\nOUTPUT FORMAT:\nReturn ONLY a valid JSON object.\nDo not return Markdown.\nDo not use ```json or ``` fences.\nDo not include explanations before or after the JSON.\nDo not include comments.\n\nThe output MUST follow this exact structure:\n\n{\n  \"retention_problem\": {\n    \"primary_issue\": \"string\",\n    \"issue_category\": \"string\",\n    \"evidence\": [\"string\"],\n    \"reasoning\": \"string\",\n    \"confidence\": \"HIGH|MEDIUM|LOW\"\n  },\n  \"candidate_strategies\": [\n    {\n      \"strategy_name\": \"string\",\n      \"priority\": 1,\n      \"objective\": \"string\",\n      \"action\": \"string\",\n      \"customer_value\": \"string\",\n      \"business_value\": \"string\",\n      \"confidence\": \"HIGH|MEDIUM|LOW\"\n    },\n    {\n      \"strategy_name\": \"string\",\n      \"priority\": 2,\n      \"objective\": \"string\",\n      \"action\": \"string\",\n      \"customer_value\": \"string\",\n      \"business_value\": \"string\",\n      \"confidence\": \"HIGH|MEDIUM|LOW\"\n    },\n    {\n      \"strategy_name\": \"string\",\n      \"priority\": 3,\n      \"objective\": \"string\",\n      \"action\": \"string\",\n      \"customer_value\": \"string\",\n      \"business_value\": \"string\",\n      \"confidence\": \"HIGH|MEDIUM|LOW\"\n    }\n  ]\n}\n\nOUTPUT CONSTRAINTS:\n- Exactly 3 candidate strategies.\n- Evidence must contain only the strongest 1–3 pieces of evidence.\n- Reasoning must be no more than 2 sentences.\n- Each objective must be one concise sentence.\n- Each action must be one concise sentence.\n- Each customer_value must be one concise sentence or phrase.\n- Each business_value must be one concise sentence or phrase.\n- Do not repeat the same information unnecessarily across fields.\n- Keep the total response concise to minimize truncation risk.\n\nJSON VALIDATION:\nBefore returning the response, internally verify that:\n- Every opening quotation mark has a matching closing quotation mark.\n- Every array is properly closed.\n- Every object is properly closed.\n- There are no trailing commas.\n- All values conform to the specified structure.\n- The response is complete valid JSON.\n- Never stop midway through a string or object."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        3840,
+        304
+      ],
+      "id": "55c3656e-0c11-4150-8574-2d6361f875c9",
+      "name": "Retention Strategy Agent"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-20b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        3920,
+        544
+      ],
+      "id": "22ffc356-117a-4adf-a39a-4773f44e8681",
+      "name": "Groq Chat Model3",
+      "credentials": {
+        "groqApi": {
+          "id": "vBZAg6NifaH5dwEI",
+          "name": "Groq account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output;\n\nlet profile;\n\ntry {\n  profile = JSON.parse(raw);\n} catch (error) {\n  throw new Error(\"Retention Strategy Agent did not return valid JSON: \" + error.message);\n}\n\nreturn {\n  json: profile\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4192,
+        176
+      ],
+      "id": "bfb36778-cd22-45a5-878c-115f93ecb482",
+      "name": "JSON PARSER4"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output;\n\nlet profile;\n\ntry {\n  profile = JSON.parse(raw);\n} catch (error) {\n  throw new Error(\"Strategy Critique did not return valid JSON: \" + error.message);\n}\n\nreturn {\n  json: profile\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4768,
+        176
+      ],
+      "id": "59e847d7-f525-4402-895f-c347104050a5",
+      "name": "JSON PARSER 5"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Make the final retention decision using the customer retention problem, candidate strategies, and strategy critique provided below.\n\nRETENTION STRATEGY OUTPUT:\n\n{{ JSON.stringify($('Retention Strategy Agent').item.json) }}\n\nSTRATEGY CRITIQUE OUTPUT:\n\n{{ JSON.stringify($('Strategy Critique Agent').item.json) }}\n\nTASK:\n\n1. Review the identified retention problem.\n2. Review all 3 candidate strategies.\n3. Review the critique and scores for each strategy.\n4. Determine whether any strategy should be selected.\n5. If one strategy is strong enough to execute as written, choose SELECT.\n6. If one strategy is promising but has a fixable weakness, choose MODIFY and specify the modification.\n7. If none of the strategies are sufficiently justified, choose REJECT_ALL.\n8. Do not automatically choose the strategy with the highest numerical score.\n9. Give greater weight to customer relevance, evidence strength, and major unsupported assumptions.\n10. Do not invent customer facts or business capabilities.\n11. Do not create a completely new strategy.\n\nIMPORTANT:\n\nA strategy containing an unsupported discount, price, benefit, customer preference, or usage assumption should not automatically be selected.\n\nIf important information is missing but could reasonably be collected before executing a strategy, MODIFY may be preferable to REJECT_ALL.\n\nIf no strategy can be responsibly recommended even after considering modification, choose REJECT_ALL.\n\nReturn ONLY the valid JSON object specified in the system prompt.",
+        "options": {
+          "systemMessage": "You are the Final Decision Agent in a customer churn and retention decision workflow.\n\nYour role is to make the final business decision after reviewing:\n1. The customer's retention problem and supporting evidence.\n2. The retention strategies generated for the customer.\n3. The Strategy Critique Agent's evaluation of those strategies.\n\nYou are the final decision-maker.\n\nYOUR POSSIBLE DECISIONS:\n\n1. SELECT\nChoose one existing strategy when it is sufficiently evidence-backed, relevant, feasible, and likely to improve retention.\n\n2. MODIFY\nChoose one existing strategy when it has strong retention potential but requires a clearly defined modification to remove a major weakness, unsupported assumption, or unnecessary business cost.\n\n3. REJECT_ALL\nReject all strategies when none are sufficiently supported, feasible, relevant, or valuable to execute.\n\nIMPORTANT:\nDo not create an entirely new strategy.\n\nIf choosing MODIFY, modify only the selected strategy. The modification must preserve the core idea of the original strategy while addressing its identified weakness.\n\nDECISION PRINCIPLES:\n\n1. Customer relevance is essential.\nThe selected strategy must address the customer's primary retention problem.\n\n2. Evidence matters.\nDo not treat assumptions or hypothetical pain points as confirmed customer facts.\n\n3. Do not blindly select the highest-scoring strategy.\nThe overall score is an input to the decision, not the decision itself.\n\n4. Unsupported assumptions must reduce confidence.\nExamples include:\n- assuming the customer is willing to sign a long-term contract\n- assuming the customer uses or does not use a particular service\n- inventing a discount level\n- inventing a target monthly price\n- assuming the customer values an additional service\n- assuming the business can provide an unmentioned benefit\n\n5. Business value matters.\nPrefer strategies that improve retention while protecting sustainable recurring revenue.\n\n6. Avoid unnecessary discounts.\nA discount should only be selected when it is justified by the evidence and is strategically preferable to non-price interventions.\n\n7. Prefer reversible and low-risk interventions when evidence is uncertain.\n\n8. If a strategy requires information that is currently unknown, prefer MODIFY over SELECT when the missing information can reasonably be obtained.\n\n9. If no strategy meets a reasonable decision threshold, choose REJECT_ALL.\nDo not force a recommendation simply because strategies were generated.\n\nDECISION LOGIC:\n\nSELECT a strategy when:\n- it directly addresses the primary retention problem,\n- evidence support is adequate,\n- major assumptions are limited,\n- it is operationally feasible,\n- and its expected customer and business value justify the intervention.\n\nMODIFY a strategy when:\n- the core strategy is promising,\n- but a significant weakness can be addressed without replacing the strategy entirely.\n\nREJECT_ALL when:\n- all strategies depend on major unsupported assumptions,\n- all strategies have weak customer relevance,\n- all strategies have unacceptable business or operational risk,\n- or the available evidence is insufficient to justify any intervention.\n\nWHEN COMPARING STRATEGIES:\n\nConsider, in order of importance:\n1. Customer relevance\n2. Evidence strength\n3. Retention potential\n4. Business value / revenue protection\n5. Feasibility\n6. Cost efficiency\n7. Strategic risk\n\nA higher numerical score does not automatically override a major evidence or feasibility problem.\n\nOUTPUT:\n\nReturn ONLY one valid JSON object.\n\nDo not use Markdown.\nDo not use ```json.\nDo not add explanations before or after the JSON.\nDo not include comments.\n\nThe output MUST follow exactly this structure:\n\n{\n  \"decision\": \"SELECT|MODIFY|REJECT_ALL\",\n  \"selected_strategy\": {\n    \"strategy_name\": \"string\",\n    \"priority\": 1,\n    \"original_strategy\": \"string\",\n    \"modification\": \"string\"\n  },\n  \"decision_reason\": \"string\",\n  \"customer_problem_addressed\": \"string\",\n  \"expected_customer_value\": \"string\",\n  \"expected_business_value\": \"string\",\n  \"key_risk\": \"string\",\n  \"evidence_basis\": [\n    \"string\"\n  ],\n  \"decision_confidence\": \"HIGH|MEDIUM|LOW\"\n}\n\nRULES FOR selected_strategy:\n\nIf decision = SELECT:\n- strategy_name must be the selected existing strategy.\n- priority must match its original priority.\n- original_strategy must briefly describe the selected strategy.\n- modification must be \"None\".\n\nIf decision = MODIFY:\n- strategy_name must be the selected existing strategy.\n- priority must match its original priority.\n- original_strategy must briefly describe the selected strategy.\n- modification must clearly state exactly what should change.\n\nIf decision = REJECT_ALL:\n- strategy_name must be \"None\".\n- priority must be 0.\n- original_strategy must be \"None\".\n- modification must be \"None\".\n- decision_reason must explain why all strategies were rejected.\n\nOUTPUT CONSTRAINTS:\n\n- evidence_basis must contain 1–3 strongest evidence points.\n- decision_reason must be no more than 3 sentences.\n- modification must be concise.\n- Do not invent numerical prices, discounts, customer preferences, or business capabilities.\n- Keep the entire response concise.\n\nJSON VALIDATION:\n\nBefore returning the response, internally verify that:\n- Every string has a closing quotation mark.\n- Every array is properly closed.\n- Every object is properly closed.\n- There are no trailing commas.\n- decision is exactly SELECT, MODIFY, or REJECT_ALL.\n- The selected strategy exists in the provided strategies unless decision is REJECT_ALL.\n- priority matches the original strategy.\n- The response is complete valid JSON.\n\n\nIf a selected strategy contains an unsupported numerical price, discount percentage, target price, or incentive, the modification must remove or qualify that unsupported number unless it is explicitly supported by the input.\n\nDo not carry unsupported numerical assumptions from earlier agents into the final recommendation.\n\nSTRATEGY IDENTITY RULE:\n\nWhen selecting or modifying a strategy, you MUST preserve the exact\nstrategy_name and priority from the Retention Strategy Agent.\n\nDo not rename, paraphrase, shorten, or reinterpret the strategy name.\n\nFor example:\n\nIf the original strategy is:\n\"Bundle Optimization Review\"\n\nyou MUST output:\n\"Bundle Optimization Review\"\n\nYou must NOT output:\n\"Bundle Optimization Consultation\"\n\"Bundle Review\"\n\"Bundle Optimization\"\nor any other variation.\n\nIf decision = MODIFY, only the \"modification\" field may introduce changes.\n\nThe original strategy_name, priority, and core strategy identity must remain unchanged."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        5216,
+        304
+      ],
+      "id": "68d68a89-74a6-4725-b42e-b641bbc3b1d9",
+      "name": "Final Decision"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        5296,
+        544
+      ],
+      "id": "db61afc0-4a9d-4fbb-b923-73357ae46a65",
+      "name": "Groq Chat Model4",
+      "credentials": {
+        "groqApi": {
+          "id": "GIBOHq0g2hKCmvAW",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// FINAL GUARDRAIL — RETENTION DECISION\n// ============================================\n\n// ---------- CONFIGURATION ----------\nconst MAX_DISCOUNT_PERCENT = 20;\nconst MIN_DISCOUNT_PERCENT = 0;\nconst MIN_MONTHLY_PRICE = 0;\n\n\n// ---------- HELPERS ----------\nfunction parseJSON(value) {\n  if (typeof value === \"object\" && value !== null) {\n    return value;\n  }\n\n  if (typeof value === \"string\") {\n    try {\n      return JSON.parse(value);\n    } catch (e) {\n      return null;\n    }\n  }\n\n  return null;\n}\n\n\n// ---------- INPUT ----------\nconst finalDecision = parseJSON($json);\n\n\n// ---------- RESULTS ----------\nconst errors = [];\nconst warnings = [];\n\n\n// ============================================\n// 1. BASIC STRUCTURE CHECK\n// ============================================\n\nif (!finalDecision) {\n  errors.push(\n    \"Final Decision output is not valid JSON.\"\n  );\n}\n\nconst validDecisions = [\n  \"SELECT\",\n  \"MODIFY\",\n  \"REJECT_ALL\"\n];\n\nif (\n  finalDecision &&\n  !validDecisions.includes(finalDecision.decision)\n) {\n  errors.push(\n    \"Decision must be SELECT, MODIFY, or REJECT_ALL.\"\n  );\n}\n\n\n// ============================================\n// 2. REQUIRED FIELDS\n// ============================================\n\nif (finalDecision) {\n\n  if (!finalDecision.selected_strategy) {\n    errors.push(\n      \"selected_strategy is missing.\"\n    );\n  }\n\n  if (!finalDecision.decision_reason) {\n    errors.push(\n      \"decision_reason is missing.\"\n    );\n  }\n\n  if (!finalDecision.customer_problem_addressed) {\n    errors.push(\n      \"customer_problem_addressed is missing.\"\n    );\n  }\n\n  if (!finalDecision.expected_customer_value) {\n    errors.push(\n      \"expected_customer_value is missing.\"\n    );\n  }\n\n  if (!finalDecision.expected_business_value) {\n    errors.push(\n      \"expected_business_value is missing.\"\n    );\n  }\n\n  if (!finalDecision.key_risk) {\n    errors.push(\n      \"key_risk is missing.\"\n    );\n  }\n\n  if (\n    !Array.isArray(finalDecision.evidence_basis) ||\n    finalDecision.evidence_basis.length === 0\n  ) {\n    errors.push(\n      \"evidence_basis is missing or empty.\"\n    );\n  }\n}\n\n\n// ============================================\n// 3. SELECT LOGIC\n// ============================================\n\nif (\n  finalDecision &&\n  finalDecision.decision === \"SELECT\"\n) {\n\n  if (\n    !finalDecision.selected_strategy?.modification ||\n    finalDecision.selected_strategy.modification !== \"None\"\n  ) {\n    errors.push(\n      \"SELECT decision must have modification = None.\"\n    );\n  }\n}\n\n\n// ============================================\n// 4. MODIFY LOGIC\n// ============================================\n\nif (\n  finalDecision &&\n  finalDecision.decision === \"MODIFY\"\n) {\n\n  // Only require that a modification exists.\n  // DO NOT check strategy name.\n  // DO NOT check priority.\n  // DO NOT compare with Retention Strategy Agent.\n\n  if (\n    !finalDecision.selected_strategy?.modification ||\n    finalDecision.selected_strategy.modification === \"None\"\n  ) {\n    errors.push(\n      \"MODIFY decision must contain a modification.\"\n    );\n  }\n}\n\n\n// ============================================\n// 5. REJECT_ALL LOGIC\n// ============================================\n\nif (\n  finalDecision &&\n  finalDecision.decision === \"REJECT_ALL\"\n) {\n\n  const selected =\n    finalDecision.selected_strategy;\n\n  if (selected?.strategy_name !== \"None\") {\n    errors.push(\n      \"REJECT_ALL must have strategy_name = None.\"\n    );\n  }\n\n  if (selected?.priority !== 0) {\n    errors.push(\n      \"REJECT_ALL must have priority = 0.\"\n    );\n  }\n\n  if (selected?.original_strategy !== \"None\") {\n    errors.push(\n      \"REJECT_ALL must have original_strategy = None.\"\n    );\n  }\n\n  if (selected?.modification !== \"None\") {\n    errors.push(\n      \"REJECT_ALL must have modification = None.\"\n    );\n  }\n}\n\n\n// ============================================\n// 6. DISCOUNT CHECK\n// ============================================\n\nlet fullText = \"\";\n\nif (finalDecision) {\n  fullText = JSON.stringify(finalDecision);\n}\n\n\n// Detect:\n// 10% discount\n// 10% off\n// 10 percent discount\n// discount of 10%\n// 10% reduction\n\nconst discountRegex =\n  /(\\d+(?:\\.\\d+)?)\\s*(?:%|percent)\\s*(?:discount|off|reduction)?|(?:discount|reduction)\\s*(?:of)?\\s*(\\d+(?:\\.\\d+)?)\\s*(?:%|percent)/gi;\n\nconst discountValues = [];\n\nfor (\n  const match of fullText.matchAll(discountRegex)\n) {\n\n  const value =\n    match[1] || match[2];\n\n  if (value !== undefined) {\n    discountValues.push(Number(value));\n  }\n}\n\n\nfor (const discount of discountValues) {\n\n  if (discount < MIN_DISCOUNT_PERCENT) {\n    errors.push(\n      `Invalid discount: ${discount}%. Discount cannot be negative.`\n    );\n  }\n\n  if (discount > MAX_DISCOUNT_PERCENT) {\n    errors.push(\n      `Discount of ${discount}% exceeds the maximum allowed discount of ${MAX_DISCOUNT_PERCENT}%.`\n    );\n  }\n}\n\n\n// ============================================\n// 7. MONTHLY PRICE CHECK\n// ============================================\n\nconst priceRegex =\n  /\\$?\\s*(\\d+(?:\\.\\d+)?)\\s*(?:\\/\\s*month|per\\s+month)/gi;\n\nconst prices = [];\n\nfor (\n  const match of fullText.matchAll(priceRegex)\n) {\n  prices.push(Number(match[1]));\n}\n\n\nfor (const price of prices) {\n\n  if (price < MIN_MONTHLY_PRICE) {\n    errors.push(\n      `Invalid monthly price: ${price}. Monthly price cannot be negative.`\n    );\n  }\n}\n\n\n// ============================================\n// 8. FLAG UNSUPPORTED INCENTIVES\n// ============================================\n\nconst incentivePatterns = [\n  /\\bfree\\b/gi,\n  /\\bcomplimentary\\b/gi,\n  /\\bone[- ]time incentive\\b/gi,\n  /\\bcashback\\b/gi,\n  /\\bgift card\\b/gi,\n  /\\bdevice upgrade\\b/gi\n];\n\n\nfor (const pattern of incentivePatterns) {\n\n  if (pattern.test(fullText)) {\n    warnings.push(\n      \"Potentially unsupported incentive detected. Verify that the proposed incentive is actually available.\"\n    );\n  }\n}\n\n\n// ============================================\n// 9. FLAG OVERCONFIDENT ASSUMPTIONS\n// ============================================\n\nconst assumptionPatterns = [\n  /\\bguaranteed\\b/gi,\n  /\\bwill definitely\\b/gi,\n  /\\bwill churn\\b/gi,\n  /\\bwill accept\\b/gi,\n  /\\bcertain to\\b/gi\n];\n\n\nfor (const pattern of assumptionPatterns) {\n\n  if (pattern.test(fullText)) {\n    warnings.push(\n      \"Potentially overconfident customer assumption detected.\"\n    );\n  }\n}\n\n\n// ============================================\n// 10. CONFIDENCE CHECK\n// ============================================\n\nif (\n  finalDecision &&\n  ![\"HIGH\", \"MEDIUM\", \"LOW\"].includes(\n    finalDecision.decision_confidence\n  )\n) {\n  errors.push(\n    \"decision_confidence must be HIGH, MEDIUM, or LOW.\"\n  );\n}\n\n\n// ============================================\n// FINAL RESULT\n// ============================================\n\nconst passed =\n  errors.length === 0;\n\n\nreturn [\n  {\n    json: {\n\n      guardrail_status:\n        passed ? \"PASS\" : \"FAIL\",\n\n      decision_valid:\n        passed,\n\n      errors,\n\n      warnings,\n\n      checks: {\n        max_discount_percent:\n          MAX_DISCOUNT_PERCENT,\n\n        discount_values_detected:\n          discountValues,\n\n        monthly_prices_detected:\n          prices\n      },\n\n      final_decision:\n        finalDecision\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5680,
+        128
+      ],
+      "id": "9e99573b-352c-4849-a635-007dd9247eec",
+      "name": "GUARDRAILS"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2944,
+        304
+      ],
+      "id": "510e0ea9-b837-4a46-9ca6-660f922f38a7",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "amount": 12
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2144,
+        512
+      ],
+      "id": "48c4c82c-3569-4d80-a9b9-a61b1efff2e7",
+      "name": "Wait",
+      "webhookId": "1089523b-1216-4235-8974-cc65cffa10a2"
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3392,
+        304
+      ],
+      "id": "925edcaf-ab24-4f42-a360-4e448ce192b7",
+      "name": "Wait1",
+      "webhookId": "49559eb1-9c22-4914-a9df-c044c8fd154c"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output;\n\nlet profile;\n\ntry {\n  profile = JSON.parse(raw);\n} catch (error) {\n  throw new Error(\"Customer Profiler did not return valid JSON: \" + error.message);\n}\n\nreturn {\n  json: profile\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        304
+      ],
+      "id": "3dd8756b-c891-4161-b090-96846c06c1ac",
+      "name": "Customer Profiler JSON Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output;\n\nlet profile;\n\ntry {\n  profile = JSON.parse(raw);\n} catch (error) {\n  throw new Error(\"Churn Risk Agent did not return valid JSON: \" + error.message);\n}\n\nreturn {\n  json: profile\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        112
+      ],
+      "id": "04dfc23a-07df-4f65-b2e4-da0bc4c63f56",
+      "name": "Churn Risk JSON Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output;\n\nlet profile;\n\ntry {\n  profile = JSON.parse(raw);\n} catch (error) {\n  throw new Error(\"Pain Point Agent did not return valid JSON: \" + error.message);\n}\n\nreturn {\n  json: profile\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        512
+      ],
+      "id": "67190149-e497-41d0-86d7-e0f28df7f653",
+      "name": "Pain Point JSON Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nlet risk = null;\nlet painPoints = null;\n\nfor (const item of items) {\n  const data = item.json;\n\n  // Identify Risk Agent output\n  if (data.risk_assessment) {\n    risk = {\n      churn_score: data.risk_assessment.churn_score,\n      risk_band: data.risk_assessment.risk_band,\n      overall_interpretation: data.risk_assessment.overall_interpretation,\n      risk_signals: (data.risk_signals || []).map(x => ({\n        signal: x.signal,\n        importance: x.importance,\n        evidence: x.evidence\n      })),\n      protective_signals: (data.protective_signals || []).map(x => ({\n        signal: x.signal,\n        evidence: x.evidence\n      })),\n      risk_interactions: (data.risk_interactions || []).map(x => ({\n        observation: x.observation,\n        interpretation: x.interpretation\n      })),\n      confidence: data.confidence\n    };\n  }\n\n  // Identify Pain Point Agent output\n  if (data.potential_pain_points) {\n    painPoints = {\n      primary_potential_need: data.primary_potential_need,\n      secondary_potential_needs: data.secondary_potential_needs,\n      potential_pain_points: (data.potential_pain_points || []).map(x => ({\n        pain_point: x.pain_point,\n        priority: x.priority,\n        confidence: x.confidence,\n        evidence: x.evidence\n      })),\n      alternative_explanations: data.alternative_explanations,\n      unknowns: data.unknowns,\n      overall_confidence: data.overall_confidence\n    };\n  }\n}\n\nreturn [\n  {\n    json: {\n      risk,\n      pain_points: painPoints\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3616,
+        304
+      ],
+      "id": "781f8a19-67a3-427f-a41f-5ce3eef1cd41",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-20b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        4496,
+        416
+      ],
+      "id": "8a935d42-7631-4746-8ac5-1ebbe9ca9745",
+      "name": "Groq Chat Model5",
+      "credentials": {
+        "groqApi": {
+          "id": "vBZAg6NifaH5dwEI",
+          "name": "Groq account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Critically evaluate the following retention strategies.\n\nRETENTION STRATEGY OUTPUT:\n\n{{ JSON.stringify($json) }}\n\nTASK:\n\nEvaluate all 3 candidate strategies using the criteria and scoring system defined in the system prompt.\n\nFor each strategy:\n- Assess customer relevance.\n- Assess evidence strength.\n- Assess retention potential.\n- Assess revenue protection.\n- Assess cost efficiency.\n- Assess feasibility.\n- Identify key strengths.\n- Identify weaknesses.\n- Identify the most important assumption or risk.\n- Provide a concise overall critique.\n\nThen:\n1. Select the strongest strategy.\n2. Explain why it is stronger than the alternatives.\n3. Identify the biggest decision warning or risk that the final decision agent should consider.\n\nIMPORTANT:\n\nThe strategies may contain assumptions or unsupported claims. Do not treat those claims as facts simply because they appear in the strategy output.\n\nIn particular, flag arbitrary discounts, prices, benefits, service changes, or customer preferences that are not supported by the original customer evidence.\n\nDo not create new retention strategies.\n\nReturn ONLY the valid JSON object specified in the system prompt.",
+        "options": {
+          "systemMessage": "You are the Strategy Critique Agent in a customer churn and retention decision workflow.\n\nYour job is to critically evaluate the retention strategies produced by the Retention Strategy Agent.\n\nThe strategies have already been generated. Do NOT generate new strategies unless explicitly required. Your role is to assess the quality, evidence, feasibility, and expected retention value of each existing strategy.\n\nEVALUATION CRITERIA:\n\nEvaluate every strategy on the following dimensions using integer scores from 1 to 5:\n\n1. CUSTOMER_RELEVANCE\nHow directly does the strategy address the customer's identified retention problem?\n\n2. EVIDENCE_STRENGTH\nHow strongly is the strategy supported by the available customer evidence?\n\n3. RETENTION_POTENTIAL\nHow likely is the strategy to reduce the customer's probability of churn?\n\n4. REVENUE_PROTECTION\nHow well does the strategy protect recurring revenue while retaining the customer?\n\n5. COST_EFFICIENCY\nHow efficiently does the strategy achieve retention without unnecessary discounts, incentives, or business cost?\n\n6. FEASIBILITY\nHow realistic and operationally feasible is the strategy for a telecom/service business?\n\nCRITIQUE PRINCIPLES:\n\n- Do not assume customer preferences that are not present in the input.\n- Do not treat hypotheses or potential pain points as confirmed customer complaints.\n- Penalize strategies that rely on unsupported assumptions.\n- Penalize strategies that introduce arbitrary prices, discounts, benefits, or service changes without supporting evidence.\n- Do not automatically prefer discounts.\n- A strategy should solve the customer's problem while also making business sense.\n- Distinguish between a strategy being attractive in theory and being supported by the available evidence.\n- Identify important risks or weaknesses in each strategy.\n- Do not invent new customer information.\n- Do not generate replacement strategies. Critique the strategies provided.\n\nSCORING:\n\nEach criterion must receive an integer score from 1 to 5.\n\nCalculate overall_score as the arithmetic average of the six criterion scores.\n\nUse this formula:\n\noverall_score = (\ncustomer_relevance +\nevidence_strength +\nretention_potential +\nrevenue_protection +\ncost_efficiency +\nfeasibility\n) / 6\n\nRound overall_score to 2 decimal places.\n\nAfter evaluating all strategies:\n1. Identify the strongest strategy based on overall score and qualitative critique.\n2. Explain why it is the strongest.\n3. Identify the biggest weakness or risk in the overall strategy set.\n4. If the highest-scoring strategy relies on a major unsupported assumption, explicitly flag it.\n\nOUTPUT REQUIREMENTS:\n\nReturn ONLY one valid JSON object.\n\nDo not use Markdown.\nDo not use ```json.\nDo not add explanations before or after the JSON.\nDo not include comments.\n\nThe output MUST follow this exact structure:\n\n{\n  \"strategy_evaluations\": [\n    {\n      \"strategy_name\": \"string\",\n      \"scores\": {\n        \"customer_relevance\": 1,\n        \"evidence_strength\": 1,\n        \"retention_potential\": 1,\n        \"revenue_protection\": 1,\n        \"cost_efficiency\": 1,\n        \"feasibility\": 1\n      },\n      \"overall_score\": 0.00,\n      \"strengths\": [\"string\"],\n      \"weaknesses\": [\"string\"],\n      \"key_assumption_or_risk\": \"string\",\n      \"critique\": \"string\"\n    },\n    {\n      \"strategy_name\": \"string\",\n      \"scores\": {\n        \"customer_relevance\": 1,\n        \"evidence_strength\": 1,\n        \"retention_potential\": 1,\n        \"revenue_protection\": 1,\n        \"cost_efficiency\": 1,\n        \"feasibility\": 1\n      },\n      \"overall_score\": 0.00,\n      \"strengths\": [\"string\"],\n      \"weaknesses\": [\"string\"],\n      \"key_assumption_or_risk\": \"string\",\n      \"critique\": \"string\"\n    },\n    {\n      \"strategy_name\": \"string\",\n      \"scores\": {\n        \"customer_relevance\": 1,\n        \"evidence_strength\": 1,\n        \"retention_potential\": 1,\n        \"revenue_protection\": 1,\n        \"cost_efficiency\": 1,\n        \"feasibility\": 1\n      },\n      \"overall_score\": 0.00,\n      \"strengths\": [\"string\"],\n      \"weaknesses\": [\"string\"],\n      \"key_assumption_or_risk\": \"string\",\n      \"critique\": \"string\"\n    }\n  ],\n  \"best_strategy\": {\n    \"strategy_name\": \"string\",\n    \"reason\": \"string\"\n  },\n  \"overall_risk\": \"LOW|MEDIUM|HIGH\",\n  \"key_decision_warning\": \"string\"\n}\n\nOUTPUT CONSTRAINTS:\n\n- Evaluate exactly the 3 strategies provided.\n- Do not add or remove strategies.\n- Each score must be an integer from 1 to 5.\n- overall_score must be calculated from the six scores.\n- Keep strengths concise.\n- Keep weaknesses concise.\n- Keep critique to no more than 2 sentences.\n- Keep the entire response concise to minimize output-token usage.\n\nJSON VALIDATION:\n\nBefore returning the response, internally verify that:\n- Every string has a closing quotation mark.\n- Every array is properly closed.\n- Every object is properly closed.\n- There are no trailing commas.\n- Exactly 3 strategy evaluations are present.\n- All six scores are integers from 1 to 5.\n- overall_score is mathematically correct.\n- The response is complete valid JSON."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        4416,
+        176
+      ],
+      "id": "0affb9e7-f71e-4fc7-817d-3d716bc25985",
+      "name": "Strategy Critique Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output;\n\nlet profile;\n\ntry {\n  profile = JSON.parse(raw);\n} catch (error) {\n  throw new Error(\"Final Decision did not return valid JSON: \" + error.message);\n}\n\nreturn {\n  json: profile\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5504,
+        128
+      ],
+      "id": "9f04895f-fa9b-41e2-a6c5-a01820d2bd90",
+      "name": "JSON PARSER "
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Enter Customer ID": {
+      "main": [
+        [
+          {
+            "node": "Look Up Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Look Up Customer": {
+      "main": [
+        [
+          {
+            "node": "Select Columns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Columns": {
+      "main": [
+        [
+          {
+            "node": "RiskBand",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RiskBand": {
+      "main": [
+        [
+          {
+            "node": "ValueBand",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ValueBand": {
+      "main": [
+        [
+          {
+            "node": "Preparing AI input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Customer Profiler",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparing AI input": {
+      "main": [
+        [
+          {
+            "node": "Customer Profiler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Customer Profiler": {
+      "main": [
+        [
+          {
+            "node": "Customer Profiler JSON Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Churn Risk Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Churn Risk Agent": {
+      "main": [
+        [
+          {
+            "node": "Churn Risk JSON Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Pain-Point Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pain-Point Agent": {
+      "main": [
+        [
+          {
+            "node": "Pain Point JSON Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Retention Strategy Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retention Strategy Agent": {
+      "main": [
+        [
+          {
+            "node": "JSON PARSER4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSON PARSER4": {
+      "main": [
+        [
+          {
+            "node": "Strategy Critique Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSON PARSER 5": {
+      "main": [
+        [
+          {
+            "node": "Final Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Final Decision",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Decision": {
+      "main": [
+        [
+          {
+            "node": "JSON PARSER ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Pain-Point Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Customer Profiler JSON Parser": {
+      "main": [
+        [
+          {
+            "node": "Churn Risk Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Churn Risk JSON Parser": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pain Point JSON Parser": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Retention Strategy Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model5": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Strategy Critique Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Strategy Critique Agent": {
+      "main": [
+        [
+          {
+            "node": "JSON PARSER 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSON PARSER ": {
+      "main": [
+        [
+          {
+            "node": "GUARDRAILS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "33e4ed3a-d569-4c6c-8e35-644c0805be9e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f7fe6e3ba61b8cf16dc1e236a56640fdfc6b7b18a174348e22ae2aaae0f0c853"
+  },
+  "nodeGroups": [],
+  "id": "65M6Fgeh5OBkEADW",
+  "tags": []
+}
